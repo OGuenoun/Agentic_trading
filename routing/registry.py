@@ -10,8 +10,13 @@ class AgentRegistry:
             "market_analyst",
             "news_analyst",
             "quant_analyst",
+            "technical_analyst",
+            "BullAgent",
+            "BearAgent",
+            "TraderAgent",
             "critic",
             "risk_manager",
             "portfolio_manager",
+            "DashboardAgent",
         ]
         return [self._agents[name] for name in order]
