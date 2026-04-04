@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class AppConfig:
     symbol: str = "AAPL"
     days: int = 120
-    model: str = "qwen2.5:7b-instruct"
+    model: str = "llama3.2:latest"
     ollama_host: str = "http://localhost:11434"
     memory_path: str = "memory/trade_memory.json"
     report_path: str = "outputs/latest_report.json"

@@ -1,32 +1,93 @@
 from __future__ import annotations
-import random
+from nltk.sentiment import SentimentIntensityAnalyzer
+import nltk
+
+# Download required NLTK data
+try:
+    nltk.data.find('vader_lexicon')
+except LookupError:
+    nltk.download('vader_lexicon', quiet=True)
 
 
-POSITIVE_WORDS = {
-    "beat", "growth", "upside", "strong", "upgrade", "surge", "profit", "record", "improves"
-}
-NEGATIVE_WORDS = {
-    "miss", "downgrade", "lawsuit", "risk", "weak", "decline", "loss", "pressure", "cuts"
-}
+# Initialize VADER sentiment analyzer
+_sia = SentimentIntensityAnalyzer()
 
 
-def generate_mock_headlines(symbol: str, seed: int):
-    rng = random.Random(seed + 17)
-    templates = [
-        f"{symbol} posts strong quarterly growth and record margins",
-        f"Analysts debate {symbol} after mixed guidance and cost pressure",
-        f"{symbol} faces lawsuit concerns but product demand remains strong",
-        f"{symbol} receives upgrade as revenue outlook improves",
-        f"{symbol} shares decline after weak short-term forecast",
-    ]
-    rng.shuffle(templates)
-    return templates[:3]
+def analyze_headline_sentiment(headline: str) -> dict:
+    """
+    Analyze sentiment of a single headline using VADER.
+    
+    Returns:
+        dict with compound, pos, neu, neg scores
+    """
+    scores = _sia.polarity_scores(headline)
+    return scores
+
+
+def aggregate_sentiments(headlines: list) -> dict:
+    """
+    Aggregate sentiment scores across multiple headlines.
+    
+    Args:
+        headlines: list of headline strings
+        
+    Returns:
+        dict with aggregated scores and sentiment summary
+    """
+    if not headlines:
+        return {
+            "compound": 0.0,
+            "positive": 0.0,
+            "negative": 0.0,
+            "neutral": 0.0,
+            "sentiment_summary": "neutral",
+            "headline_count": 0,
+        }
+    
+    compound_scores = []
+    pos_scores = []
+    neg_scores = []
+    neu_scores = []
+    
+    for headline in headlines:
+        scores = analyze_headline_sentiment(headline)
+        compound_scores.append(scores['compound'])
+        pos_scores.append(scores['pos'])
+        neg_scores.append(scores['neg'])
+        neu_scores.append(scores['neu'])
+    
+    avg_compound = sum(compound_scores) / len(compound_scores)
+    avg_positive = sum(pos_scores) / len(pos_scores)
+    avg_negative = sum(neg_scores) / len(neg_scores)
+    avg_neutral = sum(neu_scores) / len(neu_scores)
+    
+    # Determine overall sentiment
+    if avg_compound >= 0.05:
+        sentiment_summary = "bullish"
+    elif avg_compound <= -0.05:
+        sentiment_summary = "bearish"
+    else:
+        sentiment_summary = "neutral"
+    
+    return {
+        "compound": float(avg_compound),
+        "positive": float(avg_positive),
+        "negative": float(avg_negative),
+        "neutral": float(avg_neutral),
+        "sentiment_summary": sentiment_summary,
+        "headline_count": len(headlines),
+        "raw_scores": compound_scores,
+    }
 
 
 def headline_sentiment_proxy(headlines):
-    score = 0.0
-    for h in headlines:
-        words = set(h.lower().replace("-", " ").split())
-        score += len(words & POSITIVE_WORDS)
-        score -= len(words & NEGATIVE_WORDS)
-    return max(-1.0, min(1.0, score / 5.0))
+    """
+    Legacy function for backward compatibility.
+    Returns normalized sentiment score from -1 to 1.
+    """
+    if not headlines:
+        return 0.0
+    
+    aggregated = aggregate_sentiments(headlines)
+    # compound score is already in -1 to 1 range
+    return aggregated["compound"]
