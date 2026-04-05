@@ -18,46 +18,81 @@ class RiskManagerAgent(BaseAgent):
     }
 
     def run(self, state, llm):
-        prompt = f'''
-You are the risk manager.
+        """LLM decides risk tools → Agent calls → LLM decides risk policy."""
+        quant = state.get("quant_view", {})
+        critic = state.get("critic_view", {})
+        
+        # Step 1: Ask LLM which risk assessment tools to use
+        planning_prompt = f"""
+Available risk tools: calculate_position_size
+
+Current state:
+- Quant volatility: {quant.get('expected_volatility', 0):.4f}
+- Critic verdict: {critic.get('verdict', 'N/A')}
+- Critic concerns: {critic.get('concerns', [])}
+
+Which risk management tools should I use?
+"""
+        
+        tools_schema = {
+            "type": "object",
+            "properties": {
+                "tools": {"type": "array", "items": {"type": "string"}},
+                "reasoning": {"type": "string"},
+            },
+            "required": ["tools", "reasoning"]
+        }
+        
+        decision = llm.run_structured(
+            system="You are a risk manager. Decide which risk tools to use.",
+            user=planning_prompt,
+            schema=tools_schema,
+            fallback={"tools": [], "reasoning": "No specialized tools needed"}
+        )
+        
+        # Step 2: Call recommended risk tools
+        risk_data = {}
+        
+        for tool in decision.get("tools", []):
+            try:
+                if tool == "calculate_position_size":
+                    # Risk manager uses position sizing to enforce constraints
+                    risk_data["position_sizing"] = self.call_tool(
+                        "size_position",
+                        account_size=100000,
+                        target_weight=0.35
+                    )
+            except Exception as e:
+                risk_data[tool] = {"error": str(e)}
+        
+        # Step 3: Ask LLM to make risk decision based on all views + tool results
+        risk_prompt = f"""
+Based on market analysis and concerns, what risk level and position limits?
 
 Quant view:
-{state.get("quant_view")}
+{quant}
 
 Critic view:
-{state.get("critic_view")}
+{critic}
 
-News view:
-{state.get("news_view")}
+Risk tools:
+{risk_data}
 
-Assign a risk level, a max portfolio weight, and whether to veto the trade.
-Return only valid JSON.
-'''
-        quant = state.get("quant_view")
-        critic = state.get("critic_view")
-        risk_level = "medium"
-        max_weight = 0.35
-        veto = False
-        if quant["expected_volatility"] > 0.035:
-            risk_level = "high"
-            max_weight = 0.10
-        elif quant["expected_volatility"] < 0.015:
-            risk_level = "low"
-            max_weight = 0.60
-        if "weak_edge" in critic["concerns"] and "high_volatility" in critic["concerns"]:
-            veto = True
-            max_weight = 0.0
-
+Assess: Is risk level low, medium, or high?
+Set max_weight as a decimal between 0.0 and 1.0 (e.g., 0.35 for 35%, not 35 or 35%).
+Decide if we should veto the trade.
+"""
+        
         payload = llm.run_structured(
-            system="You are a conservative portfolio risk manager.",
-            user=prompt,
+            system="You are a conservative portfolio risk manager. Prioritize capital preservation.",
+            user=risk_prompt,
             schema=self.schema,
             fallback={
-                "risk_level": risk_level,
-                "max_weight": max_weight,
-                "veto": veto,
-                "summary": "Fallback risk output used because Ollama was unavailable.",
-            },
+                "risk_level": "medium",
+                "max_weight": 0.35,
+                "veto": "high_volatility" in critic.get("concerns", []),
+                "summary": "Fallback risk assessment."
+            }
         )
         state.set("risk_view", payload)
         state.publish(self.name, payload["summary"])

@@ -7,7 +7,6 @@ class AgentRegistry:
 
     def ordered_agents(self):
         order = [
-            "market_analyst",
             "news_analyst",
             "quant_analyst",
             "technical_analyst",
@@ -19,4 +18,5 @@ class AgentRegistry:
             "portfolio_manager",
             "DashboardAgent",
         ]
-        return [self._agents[name] for name in order]
+        # Return only registered agents in the specified order
+        return [self._agents[name] for name in order if name in self._agents]

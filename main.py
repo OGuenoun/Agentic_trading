@@ -3,22 +3,28 @@ from config import AppConfig
 from routing.orchestrator import Orchestrator
 from routing.registry import AgentRegistry
 
-from agents.market_analyst_agent import MarketAnalystAgent
 from agents.news_analyst_agent import NewsAnalystAgent
 from agents.quant_analyst_agent import QuantAnalystAgent
+from agents.technical_analyst_agent import TechnicalAnalystAgent
 from agents.critic_agent import CriticAgent
 from agents.risk_manager_agent import RiskManagerAgent
 from agents.portfolio_manager_agent import PortfolioManagerAgent
+from agents.simplified_debate_agents import BullAgent, BearAgent, TraderAgent
+from agents.dashboard_agent import DashboardAgent
 
 
 def build_system(config: AppConfig) -> Orchestrator:
     registry = AgentRegistry()
-    registry.register(MarketAnalystAgent())
     registry.register(NewsAnalystAgent())
     registry.register(QuantAnalystAgent())
+    registry.register(BullAgent())
+    registry.register(BearAgent())
+    registry.register(TechnicalAnalystAgent())
+    registry.register(TraderAgent())
     registry.register(CriticAgent())
     registry.register(RiskManagerAgent())
     registry.register(PortfolioManagerAgent())
+    registry.register(DashboardAgent())
     return Orchestrator(config=config, registry=registry)
 
 

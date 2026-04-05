@@ -209,7 +209,6 @@ class Orchestrator:
             "execution_log": self.communicator.dump(),
             "market_snapshot": state.get("market_snapshot"),
             "headlines": state.get("headlines"),
-            "market_view": state.get("market_view"),
             "news_view": state.get("news_view"),
             "quant_view": state.get("quant_view"),
             "technical_view": state.get("technical_view"),

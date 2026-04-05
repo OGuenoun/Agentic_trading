@@ -162,7 +162,7 @@ class AgentCommunicator:
                 "text": f"[{msg.sender}] → {msg.receiver or 'All'}: {msg.subject}",
             })
         for tc in self.tool_calls:
-            status = "✓" if tc.error is None else "✗"
+            status = "[SUCCESS]" if tc.error is None else "[FAILED]"
             all_events.append({
                 "time": tc.timestamp,
                 "type": "tool_call",
@@ -176,7 +176,7 @@ class AgentCommunicator:
             lines.append(f"{timestamp} | {event['text']}")
         
         # Tool Summary
-        lines.append("\n🔧 TOOL CALLS BY AGENT:")
+        lines.append("\nTOOL CALLS BY AGENT:")
         lines.append("-" * 60)
         for agent in sorted(set(tc.agent for tc in self.tool_calls)):
             calls = self.get_tool_calls_by_agent(agent)
@@ -187,7 +187,7 @@ class AgentCommunicator:
             lines.append(f"  Tools: {', '.join(tools_called)}")
         
         # Messages Summary
-        lines.append("\n💬 INTER-AGENT COMMUNICATION:")
+        lines.append("\nINTER-AGENT COMMUNICATION:")
         lines.append("-" * 60)
         for agent in sorted(set(m.sender for m in self.messages)):
             sent = len(self.get_messages_from(agent))
@@ -199,16 +199,16 @@ class AgentCommunicator:
     
     def _log_message(self, msg: Message) -> None:
         """Internal: format message for logging."""
-        msg_type_emoji = {
-            "info": "ℹ️",
-            "question": "❓",
-            "finding": "🔍",
-            "warning": "⚠️",
-            "decision": "✅",
-        }.get(msg.message_type, "📝")
+        msg_type_label = {
+            "info": "[INFO]",
+            "question": "[QUESTION]",
+            "finding": "[FINDING]",
+            "warning": "[WARNING]",
+            "decision": "[DECISION]",
+        }.get(msg.message_type, "[MESSAGE]")
         
         receiver = msg.receiver or "All"
-        print(f"{msg_type_emoji} [{msg.sender}] → [{receiver}] {msg.subject}")
+        print(f"{msg_type_label} [{msg.sender}] → [{receiver}] {msg.subject}")
         if isinstance(msg.content, (dict, list)):
             print(f"   {json.dumps(msg.content, indent=2)[:100]}...")
         else:
@@ -216,7 +216,7 @@ class AgentCommunicator:
     
     def _log_tool_call(self, call: ToolCall) -> None:
         """Internal: format tool call for logging."""
-        status_icon = "✓" if call.error is None else "✗"
+        status_icon = "[OK]" if call.error is None else "[ERROR]"
         print(f"{status_icon} [{call.agent}] → {call.tool_name}({list(call.args.keys())})")
         if call.error:
             print(f"   ERROR: {call.error}")

@@ -46,6 +46,7 @@ def calculate_position_size(
         "max_allowed": float(max_allowed),
         "constrained_weight": float(constrained_weight),
         "constrained_notional": float(constrained_notional),
+        "position_size": float(constrained_notional),  # ← Key that tests expect
         "position_size_pct": float((constrained_notional / account_size * 100) if account_size > 0 else 0),
     }
 
