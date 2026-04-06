@@ -26,19 +26,16 @@ class DashboardAgent(BaseAgent):
             "bull_agent": state.get("output::BullAgent"),
             "bear_agent": state.get("output::BearAgent"),
             "trader_agent": state.get("output::TraderAgent"),
-            "critic": state.get("output::CriticAgent"),
-            "news_analyst": state.get("output::NewsAnalystAgent"),
-            "quant_analyst": state.get("output::QuantAnalystAgent"),
-            "technical_analyst": state.get("output::TechnicalAnalystAgent"),
-            "risk_manager": state.get("output::RiskManagerAgent"),
-            "portfolio_manager": state.get("output::PortfolioManagerAgent"),
+            "critic": state.get("output::critic"),
+            "news_analyst": state.get("output::news_analyst"),
+            "quant_analyst": state.get("output::quant_analyst"),
+            "technical_analyst": state.get("output::technical_analyst"),
+            "risk_manager": state.get("output::risk_manager"),
+            "portfolio_manager": state.get("output::portfolio_manager"),
         }
-        
-        # Collect execution log for timeline visualization
-        execution_log = {
-            "messages": getattr(self.communicator, "messages", []) if self.communicator else [],
-            "tool_calls": getattr(self.communicator, "tool_calls", []) if self.communicator else [],
-        }
+
+        # Collect execution log using AgentCommunicator.dump() for proper serialization
+        execution_log = self.communicator.dump() if self.communicator else {}
         
         # Ask LLM to generate executive narrative
         narrative = self._generate_llm_narrative(llm)

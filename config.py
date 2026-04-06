@@ -15,3 +15,4 @@ class AppConfig:
     memory_path: str = "memory/trade_memory.json"
     report_path: str = "outputs/latest_report.json"
     temperature: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.0"))
+    max_iter: int = int(os.getenv("MAX_ITER", "4"))

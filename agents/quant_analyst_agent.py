@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import Any, Dict
+
 from agents.base import BaseAgent, AgentOutput
 
 
 class QuantAnalystAgent(BaseAgent):
     name = "quant_analyst"
+
+    TOOL_SUBSET = ["build_quant_model", "calculate_kelly", "size_position"]
 
     schema = {
         "type": "object",
@@ -19,86 +23,54 @@ class QuantAnalystAgent(BaseAgent):
     }
 
     def run(self, state, llm):
-        """LLM decides quant tools → Agent calls → LLM decides direction."""
-        quant_context = state.get("quant_context", {})
         market_snapshot = state.get("market_snapshot", {})
-        
-        # Step 1: Ask LLM which quant tools/metrics to compute
-        planning_prompt = f"""
-Available quant tools: build_quant_model, size_position, calculate_kelly
+        quant_context = state.get("quant_context", {})
+        returns = market_snapshot.get("returns", [])
+        mean_return = market_snapshot.get("mean_return", 0.0)
+        volatility = market_snapshot.get("realized_volatility", 0.0)
+        sentiment = float(state.get("headline_sentiment_proxy", 0.0))
+        symbol = state.get("symbol", "UNKNOWN")
 
-Current data:
-- Returns: {market_snapshot.get('mean_return', 0):.4f}
-- Volatility: {market_snapshot.get('realized_volatility', 0):.4f}
-- Sentiment: {state.get('headline_sentiment_proxy', 0):.2f}
+        # Build a sentinel-aware executor: resolves "USE_STATE_DATA" for returns
+        def _executor(tool_name: str, tool_args: Dict[str, Any]) -> Any:
+            if tool_args.get("returns") == "USE_STATE_DATA":
+                tool_args = dict(tool_args, returns=returns)
+            return self.call_tool(tool_name, **tool_args)
 
-Which quantitative tools should I use for thorough analysis?
-"""
-        
-        tools_schema = {
-            "type": "object",
-            "properties": {
-                "tools": {"type": "array", "items": {"type": "string"}},
-                "reason": {"type": "string"},
-            },
-            "required": ["tools", "reason"]
-        }
-        
-        decision = llm.run_structured(
-            system="You are a quantitative analyst. Select analytical tools for rigorous analysis.",
-            user=planning_prompt,
-            schema=tools_schema,
-            fallback={"tools": ["build_quant_model"], "reason": "Default quant analysis"}
+        available = self.get_available_tools()
+        available = [t for t in available if t["name"] in self.TOOL_SUBSET]
+
+        system = (
+            "You are a quantitative analyst for financial markets. "
+            "Use build_quant_model to compute expected return, volatility, and direction. "
+            "Pass returns=\"USE_STATE_DATA\" and the actual sentiment_score value when calling build_quant_model. "
+            "Optionally use calculate_kelly for position sizing. "
+            "Express confidence as a decimal 0.0-1.0."
         )
-        
-        # Step 2: Call recommended tools
-        quant_results = {}
-        
-        for tool in decision.get("tools", []):
-            try:
-                if tool == "build_quant_model":
-                    returns = market_snapshot.get("returns", [])
-                    sentiment = state.get("headline_sentiment_proxy", 0.0)
-                    quant_results["quant_model"] = self.call_tool(
-                        "build_quant_model",
-                        returns=returns if returns else [],
-                        sentiment_score=sentiment
-                    )
-                elif tool == "calculate_kelly":
-                    quant_results["kelly"] = self.call_tool(
-                        "calculate_kelly",
-                        win_rate=0.55,
-                        avg_win=0.02,
-                        avg_loss=0.01
-                    )
-            except Exception as e:
-                quant_results[tool] = {"error": str(e)}
-        
-        # Step 3: Ask LLM to decide on direction based on quant results
-        analysis_prompt = f"""
-Based on quantitative analysis, what is your market direction assessment?
+        user = (
+            f"Perform quantitative analysis for {symbol}. "
+            f"Mean daily return: {mean_return:.4f}. Realized volatility: {volatility:.4f}. "
+            f"Sentiment proxy: {sentiment:.2f}. Returns data: {len(returns)} data points available. "
+            f"Call build_quant_model with returns=\"USE_STATE_DATA\" and sentiment_score={sentiment:.4f}. "
+            f"Then determine direction, expected_return, expected_volatility, and confidence."
+        )
 
-Quant Context:
-{quant_context}
-
-Tool Results:
-{quant_results}
-
-Determine direction (bullish, bearish, neutral) and confidence as a decimal between 0.0 and 1.0 (not a percentage).
-"""
-        
-        payload = llm.run_structured(
-            system="You are a quantitative researcher. Make a directional call based on the data.",
-            user=analysis_prompt,
-            schema=self.schema,
+        payload = llm.run_agentic_loop(
+            system=system,
+            user=user,
+            tools=available,
+            final_schema=self.schema,
             fallback={
                 "direction": quant_context.get("direction", "neutral"),
-                "expected_return": quant_context.get("expected_return", 0),
-                "expected_volatility": quant_context.get("expected_volatility", 0),
-                "confidence": 0.58,
-                "summary": "Fallback quant analysis."
-            }
+                "expected_return": quant_context.get("expected_return", 0.0),
+                "expected_volatility": quant_context.get("expected_volatility", 0.0),
+                "confidence": 0.5,
+                "summary": "Fallback quant analysis.",
+            },
+            tool_executor=_executor,
+            max_iter=state.get("max_iter", 4),
         )
+
         state.set("quant_view", payload)
-        state.publish(self.name, payload["summary"])
+        state.publish(self.name, payload.get("summary", ""))
         return AgentOutput(agent=self.name, payload=payload)

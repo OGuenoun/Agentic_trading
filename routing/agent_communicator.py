@@ -81,6 +81,17 @@ class AgentCommunicator:
         self.messages.append(msg)
         self._log_message(msg)
     
+    @staticmethod
+    def _sanitize_args(args: Dict[str, Any]) -> Dict[str, Any]:
+        """Truncate large list args to keep logs readable."""
+        result = {}
+        for k, v in args.items():
+            if isinstance(v, list) and len(v) > 10:
+                result[k] = f"[{len(v)} items, first 3: {v[:3]}]"
+            else:
+                result[k] = v
+        return result
+
     def log_tool_call(
         self,
         agent: str,
@@ -93,7 +104,7 @@ class AgentCommunicator:
         call = ToolCall(
             agent=agent,
             tool_name=tool_name,
-            args=args,
+            args=self._sanitize_args(args),
             result=result,
             error=error,
         )

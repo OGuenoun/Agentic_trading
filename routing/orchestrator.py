@@ -194,6 +194,7 @@ class Orchestrator:
         state.set("headline_sentiment_proxy", proxy)
         state.set("quant_context", quant_context)
         state.set("ollama_online", self.llm.healthcheck())
+        state.set("max_iter", self.config.max_iter)
 
         # Run agents with access to tools and communication
         for agent in self.registry.ordered_agents():

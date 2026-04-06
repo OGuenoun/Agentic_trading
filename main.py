@@ -34,6 +34,7 @@ def main() -> None:
     parser.add_argument("--days", type=int, default=120)
     parser.add_argument("--model", type=str, default="qwen2.5:7b-instruct")
     parser.add_argument("--host", type=str, default="http://localhost:11434")
+    parser.add_argument("--max-iter", type=int, default=4)
     args = parser.parse_args()
 
     config = AppConfig(
@@ -41,6 +42,7 @@ def main() -> None:
         days=args.days,
         model=args.model,
         ollama_host=args.host,
+        max_iter=args.max_iter,
     )
 
     system = build_system(config)

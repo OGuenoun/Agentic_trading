@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from abc import ABC, abstractmethod
 
 
@@ -102,6 +102,37 @@ class BaseAgent(ABC):
         """Wrap agent output in AgentOutput format."""
         return AgentOutput(agent=self.name, payload=payload)
     
+    def run_agentic(
+        self,
+        llm: "OllamaStructuredAgent",
+        system: str,
+        user: str,
+        final_schema: Dict[str, Any],
+        fallback: Dict[str, Any],
+        tool_subset: Optional[List[str]] = None,
+        max_iter: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Run the LLM in a ReAct loop: the LLM calls tools autonomously until it finishes.
+        tool_subset limits which tools the LLM can see; None means all registered tools.
+        """
+        available = self.get_available_tools()
+        if tool_subset is not None:
+            available = [t for t in available if t["name"] in tool_subset]
+
+        def _executor(tool_name: str, tool_args: Dict[str, Any]) -> Any:
+            return self.call_tool(tool_name, **tool_args)
+
+        return llm.run_agentic_loop(
+            system=system,
+            user=user,
+            tools=available,
+            final_schema=final_schema,
+            fallback=fallback,
+            tool_executor=_executor,
+            max_iter=max_iter,
+        )
+
     @abstractmethod
     def run(self, state: "SharedState", llm: "OllamaStructuredAgent") -> AgentOutput:
         """Run the agent. Subclasses must implement."""

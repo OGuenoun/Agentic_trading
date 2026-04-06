@@ -34,7 +34,9 @@ class CriticAgent(BaseAgent):
         news_view = state.get("news_view", {})
         quant_view = state.get("quant_view", {})
         technical_view = state.get("technical_view", {})
-        
+        bull_view = state.get("output::BullAgent", {})
+        bear_view = state.get("output::BearAgent", {})
+
         # Ask LLM to identify concerns and weaknesses
         llm_prompt = f"""
 You are a critical analyst reviewing this multi-agent debate:
@@ -48,7 +50,14 @@ Quant View:
 Technical View:
 {technical_view}
 
+Bull Argument (signal={bull_view.get("signal", "N/A")}, confidence={bull_view.get("confidence", 0):.2f}):
+{bull_view.get("rationale", "No rationale")}
+
+Bear Argument (signal={bear_view.get("signal", "N/A")}, confidence={bear_view.get("confidence", 0):.2f}):
+{bear_view.get("rationale", "No rationale")}
+
 Identify any logical inconsistencies, weak edges, excessive risks, or conflicting signals.
+Challenge the bull/bear rationales if they contradict the quant or news data.
 Should we challenge this thesis or let it pass?
 Return a verdict (pass or challenge) and list specific concerns.
 """

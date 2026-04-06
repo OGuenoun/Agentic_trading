@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import Any, Dict
+
 from agents.base import BaseAgent, AgentOutput
-from tools.portfolio import calculate_position_size, calculate_kelly_fraction, calculate_risk_reward_ratio
 
 
 class PortfolioManagerAgent(BaseAgent):
     name = "portfolio_manager"
+
+    TOOL_SUBSET = ["size_position", "calculate_kelly", "generate_price_targets"]
 
     schema = {
         "type": "object",
@@ -19,118 +22,73 @@ class PortfolioManagerAgent(BaseAgent):
     }
 
     def run(self, state, llm):
-        """LLM decides position sizing tools → Agent calls → LLM decides action."""
-        
-        # Gather all agent views
         news_view = state.get("news_view", {})
         quant_view = state.get("quant_view", {})
         technical_view = state.get("technical_view", {})
         critic_view = state.get("critic_view", {})
         risk_view = state.get("risk_view", {})
-        
-        # Step 1: Ask LLM which portfolio tools to use
-        planning_prompt = f"""
-Available portfolio tools: calculate_position_size, calculate_kelly_fraction, calculate_risk_reward_ratio
+        market_snapshot = state.get("market_snapshot", {})
+        symbol = state.get("symbol", "UNKNOWN")
+        memory = state.get("memory", {})
+        recent_runs = [r for r in memory.get("runs", [])[-5:] if r.get("symbol") == symbol]
+        returns = market_snapshot.get("returns", [])
+        current_price = market_snapshot.get("recent_price", 0.0)
+        volatility = market_snapshot.get("realized_volatility", 0.0)
+        max_weight = risk_view.get("max_weight", 0.35)
 
-Current agent views summary:
-- Technical: {technical_view.get('direction', 'N/A')} ({technical_view.get('strength', 0):.2f})
-- Quant: {quant_view.get('direction', 'N/A')}
-- News: {news_view.get('direction', 'N/A')}
-- Risk verdict: {risk_view.get('verdict', 'N/A')} (max_weight: {risk_view.get('max_weight', 0.35):.2f})
-- Critic: {critic_view.get('verdict', 'N/A')}
+        # Sentinel-aware executor: resolves "USE_STATE_DATA" for returns
+        def _executor(tool_name: str, tool_args: Dict[str, Any]) -> Any:
+            resolved = dict(tool_args)
+            if resolved.get("returns") == "USE_STATE_DATA":
+                resolved["returns"] = returns
+            return self.call_tool(tool_name, **resolved)
 
-Which portfolio tools should I use to size position optimally?
-"""
-        
-        tools_schema = {
-            "type": "object",
-            "properties": {
-                "tools": {"type": "array", "items": {"type": "string"}},
-                "reason": {"type": "string"},
-            },
-            "required": ["tools", "reason"]
-        }
-        
-        decision = llm.run_structured(
-            system="You are a portfolio manager. Select sizing tools appropriate for this opportunity.",
-            user=planning_prompt,
-            schema=tools_schema,
-            fallback={"tools": ["calculate_position_size"], "reason": "Default sizing"}
+        available = self.get_available_tools()
+        available = [t for t in available if t["name"] in self.TOOL_SUBSET]
+
+        system = (
+            "You are a disciplined portfolio manager making the final trade decision. "
+            "Use size_position or calculate_kelly to determine appropriate sizing. "
+            "For generate_price_targets, pass returns=\"USE_STATE_DATA\". "
+            "Respect the risk manager's constraints — stay within max_weight. "
+            "Set target_weight as a decimal (e.g. 0.30 for 30%). "
+            "Express confidence as a decimal 0.0-1.0."
         )
-        
-        # Step 2: Call recommended portfolio tools
-        sizing_results = {}
-        
-        for tool in decision.get("tools", []):
-            try:
-                if tool == "calculate_position_size":
-                    sizing_results["position_size"] = calculate_position_size(
-                        account_size=100000,
-                        target_weight=risk_view.get("max_weight", 0.35)
-                    )
-                elif tool == "calculate_kelly_fraction":
-                    # Estimate win rate from technical strength
-                    win_rate = technical_view.get("strength", 0.5)
-                    avg_win = 0.02  # 2% avg win
-                    avg_loss = 0.01  # 1% avg loss
-                    sizing_results["kelly"] = calculate_kelly_fraction(
-                        win_rate=win_rate,
-                        avg_win=avg_win,
-                        avg_loss=avg_loss
-                    )
-                elif tool == "calculate_risk_reward_ratio":
-                    pass  # Requires specific trade setup
-            except Exception as e:
-                sizing_results[tool] = {"error": str(e)}
-        
-        # Step 3: Ask LLM to make final action decision
-        action_prompt = f"""
-Based on portfolio analysis and sizing tools, what is your final decision?
+        user = (
+            f"Make a final portfolio decision for {symbol}.\n"
+            f"Agent views:\n"
+            f"  Technical: {technical_view.get('direction', 'N/A')} (strength {technical_view.get('strength', 0):.2f})\n"
+            f"  Quant: {quant_view.get('direction', 'N/A')} (confidence {quant_view.get('confidence', 0):.2f})\n"
+            f"  News: {news_view.get('direction', 'N/A')} (score {news_view.get('score', 0):.2f})\n"
+            f"  Risk: {risk_view.get('risk_level', 'N/A')} | max_weight={max_weight:.2f} | veto={risk_view.get('veto', False)}\n"
+            f"  Critic: {critic_view.get('verdict', 'N/A')}\n"
+            f"Current price: ${current_price:.2f}. Volatility: {volatility:.4f}.\n"
+            + (f"Recent trade history for {symbol}: {recent_runs}.\n" if recent_runs else "")
+            + "Call tools as needed, then decide action (buy/short/hold), target_weight, confidence, and reason."
+        )
 
-All Agent Views:
-- Technical: {technical_view.get('direction')} ({technical_view.get('strength', 0):.2f})
-- Quant: {quant_view.get('direction')}
-- News: {news_view.get('direction')}
-- Risk: {risk_view.get('risk_level')} (veto: {risk_view.get('veto', False)}, max: {risk_view.get('max_weight', 0.35):.2f})
-- Critic: {critic_view.get('verdict')}
-
-Position Sizing:
-{sizing_results}
-
-Decide: buy, short, or hold?
-Respect the risk manager's veto and max_weight.
-Set target_weight within risk limits as a decimal (e.g., 0.30 for 30%, not 30).
-Return confidence as a decimal between 0.0 and 1.0.
-"""
-        
-        llm_result = llm.run_structured(
-            system="You are a disciplined portfolio manager. Make a final action decision respecting all risk constraints.",
-            user=action_prompt,
-            schema=self.schema,
+        payload = llm.run_agentic_loop(
+            system=system,
+            user=user,
+            tools=available,
+            final_schema=self.schema,
             fallback={
                 "action": "hold",
                 "target_weight": 0.0,
                 "confidence": 0.4,
-                "reason": "Fallback: insufficient signal alignment."
-            }
+                "reason": "Fallback: insufficient signal alignment.",
+            },
+            tool_executor=_executor,
+            max_iter=state.get("max_iter", 4),
         )
-        
-        # Respect risk manager's veto and max_weight
-        max_weight = risk_view.get("max_weight", 0.35)
-        target_weight = llm_result.get("target_weight", 0.0)
+
+        # Hard safety invariant: risk veto and max_weight are enforced in Python, not LLM
         if risk_view.get("veto", False):
-            target_weight = 0.0
-            llm_result["action"] = "hold"
+            payload["action"] = "hold"
+            payload["target_weight"] = 0.0
         else:
-            target_weight = min(target_weight, max_weight)
-        
-        payload = {
-            "action": llm_result.get("action", "hold"),
-            "target_weight": target_weight,
-            "confidence": llm_result.get("confidence", 0.4),
-            "reason": llm_result.get("reason", "Portfolio decision made."),
-        }
-        
+            payload["target_weight"] = min(payload.get("target_weight", 0.0), max_weight)
+
         state.set("final_decision", payload)
-        state.publish(self.name, payload["reason"])
+        state.publish(self.name, payload.get("reason", ""))
         return AgentOutput(agent=self.name, payload=payload)

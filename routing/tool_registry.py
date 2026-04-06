@@ -47,6 +47,10 @@ class ToolRegistry:
     def get_tool(self, name: str) -> Optional[ToolDef]:
         """Get a specific tool."""
         return self._tools.get(name)
+
+    def has_tool(self, name: str) -> bool:
+        """Check if a tool is registered."""
+        return name in self._tools
     
     def list_tools(self) -> List[str]:
         """List all available tool names."""
